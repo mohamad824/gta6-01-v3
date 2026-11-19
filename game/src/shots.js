@@ -1,79 +1,147 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
-// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
-// is what a short game really looks like and the same seed always gives the same frame.
-import { FIELD, PLAYER, STEP } from './config.js';
-import { EVENT_OVER, KIND_BLOCK } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// Seeded screenshot scenes (?shot=chase|onfoot|map|garage). Each one plays
+// the real rules forward from a fresh seeded state for a fixed number of
+// steps with a scripted autopilot, so the same seed always gives the same
+// frame, and the frame is what a short game really looks like.
+import * as THREE from 'three';
+import { CASH, STORY } from './config.js';
+import { makePerson, makeCar } from './vehicles.js';
+import { updateTide } from './tide.js';
+import { drivePlayer } from './player.js';
 
-const START_SECONDS = 5;
-const PLAY_SECONDS = 26;
-const END_LIMIT_SECONDS = 600;
-/**
- * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
- * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
- * caught out once the blocks speed up, as a hurried player is.
- */
-const HORIZON_PLAY = 0.7;
-const HORIZON_END = 0.25;
-const SAMPLE = 1 / 30;
-const DIRECTIONS = [0, -1, 1];
-/** Extra room, each side, it keeps between the paddle and a block. */
-const MARGIN = 10;
+const STEPS = { chase: 240, onfoot: 155, map: 120, garage: 90 };
 
-/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
-function timeToHit(state, direction, horizon) {
-  const player = state.player;
-  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
-    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
-    for (let index = 0; index < state.items.length; index += 1) {
-      const item = state.items[index];
-      if (!item.active || item.kind !== KIND_BLOCK) continue;
-      const y = item.y + item.speed * t;
-      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
-    }
-  }
-  return Infinity;
+// Chase autopilot: hold the lane, gentle weave, steady 33 m/s (119 km/h) —
+// capped so the staged traffic stays ahead of the player for the whole run
+// instead of being overtaken and ending up behind the camera.
+function chaseAutopilot(game, step) {
+  const p = game.player;
+  const weave = Math.sin(step * 0.05) * 0.5;
+  const targetX = Math.sin(step * 0.02) * 1.6;
+  const input = {
+    forward: true, back: false, brake: false,
+    left: p.x > targetX + weave, right: p.x < targetX - weave,
+    nitro: false,
+  };
+  drivePlayer(p, input, 1 / 60);
+  if (p.speed > 33) p.speed = 33;
+  // the cruiser stays RIGHT behind the player car (imminent contact): left
+  // lane, half a car-length back, so it reads over the hero car's shoulder
+  // instead of hiding behind the minimap in the bottom corner
+  const cruiser = game.police.units[0].mesh;
+  cruiser.position.set(p.x - 3.8, 0, p.z + 1.0);
+  cruiser.rotation.y = p.heading;
+  // the second cruiser boxes in from ahead-right (units[1] is WARDEN-7)
+  const cruiser2 = game.police.units[1].mesh;
+  cruiser2.position.set(p.x + 4.4, 0, p.z - 16);
+  cruiser2.rotation.y = p.heading;
+  // helicopter holds its station above-left of the player, inside the frame
+  const heli = game.police.heli;
+  heli.position.set(p.x - 13, 13, p.z - 34);
 }
 
-/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
-function autopilot(state, horizon) {
-  const player = state.player;
-  let coin = null;
-  for (let index = 0; index < state.items.length; index += 1) {
-    const item = state.items[index];
-    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
-  }
-  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
-  const centre = player.x + player.width / 2;
-  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
-  let best = wanted;
-  let bestTime = timeToHit(state, wanted, horizon);
-  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
-    const time = timeToHit(state, DIRECTIONS[index], horizon);
-    if (time > bestTime) {
-      bestTime = time;
-      best = DIRECTIONS[index];
+export function stageShot(game, name) {
+  const g = game;
+  g.shotMode = true; // no pickups / mission completions while staging
+  if (name === 'chase') {
+    g.setMode('play');
+    g.state.day = 2; g.state.tide.minutes = 18 * 60 + 42;
+    updateTide(g.state.tide, 0);
+    g.state.missions.cash = CASH.chase;
+    g.state.missions.rep = 720; g.state.missions.repLevel = 2;
+    g.state.wanted = 4; g.state.player.heat = 82;
+    g.state.player.speed = 36.7; // 132 km/h
+    g.state.player.x = 0; g.state.player.z = 60; g.state.player.heading = Math.PI;
+    g.state.missionTarget = { x: 0, z: -120 };
+    // stage the traffic: 4 cars ahead in the side lanes, near player speed,
+    // so they stay ahead of the frame instead of being rear-ended.
+    const lanes = [3.5, -4.5, 3.5, -4.5], zs = [15, 27, 40, 52], spds = [34, 34, 33, 33];
+    g.traffic.cars.slice(0, 4).forEach((car, i) => {
+      car.position.set(lanes[i], 0, zs[i]);
+      car.userData.speed = spds[i];
+    });
+    g.state.dialogue = {
+      portrait: 'T', who: 'TESS LUMEN', role: 'GETAWAY DRIVER',
+      line: '“Hold her steady, Nadia — the water’s up to the lamps and Greer’s boats are faster than they look.”',
+    };
+    g.state.prompt = null;
+    g.state.banner = null;
+    for (let s = 0; s < STEPS.chase; s++) {
+      g.stepSim(1 / 60, s);
+      chaseAutopilot(g, s);
     }
+    g.state.popups = [
+      { text: 'DRIFT', amt: '+$150' },
+      { text: 'NEAR MISS', amt: '+$250' },
+    ];
+    g.state.speedKmh = 132;
+    g.refreshRoster();
+  } else if (name === 'onfoot') {
+    g.setMode('play');
+    g.state.day = 1; g.state.tide.minutes = 17 * 60 + 45;
+    updateTide(g.state.tide, 0);
+    g.state.missions.cash = CASH.onfoot;
+    g.state.missions.rep = 0; g.state.missions.repLevel = 0;
+    g.state.missions.kills = 4; g.state.missions.killsNeeded = 7;
+    // this frame is chapter 2, the dockside fight
+    g.state.missions.current = 2;
+    g.state.missions.chapters.forEach(c => {
+      c.state = c.n === 1 ? 'DONE' : c.n === 2 ? 'ACTIVE' : 'LOCKED';
+    });
+    g.state.wanted = 2; g.state.player.heat = 34;
+    g.setupOnFootScene();
+    g.state.dialogue = {
+      portrait: 'C', who: 'CUTTER BANE', role: 'SALTJACKS · RIVAL CREW',
+      line: '“Brinehaven belongs to the Saltjacks, Ferro. You’re trespassing on our docks.”',
+    };
+    g.state.popups = [{ text: 'GUNMAN DOWN', amt: '+$120' }];
+    g.state.prompt = '<b>E</b> — STEAL CAR';
+    g.state.banner = null;
+    for (let s = 0; s < STEPS.onfoot; s++) g.stepSim(1 / 60, s);
+    g.state.speedKmh = 0;
+    g.refreshRoster();
+  } else if (name === 'map') {
+    g.setMode('play');
+    g.state.day = 2; g.state.tide.minutes = 18 * 60 + 42;
+    updateTide(g.state.tide, 0);
+    g.state.missions.cash = CASH.chase;
+    g.state.missions.rep = 720; g.state.missions.repLevel = 2;
+    g.state.wanted = 4;
+    g.state.player.speed = 36.7;
+    g.state.dialogue = {
+      portrait: 'T', who: 'TESS LUMEN', role: 'GETAWAY DRIVER',
+      line: '“Hold her steady, Nadia — the water’s up to the lamps and Greer’s boats are faster than they look.”',
+    };
+    for (let s = 0; s < STEPS.map; s++) { g.stepSim(1 / 60, s); chaseAutopilot(g, s); }
+    g.state.speedKmh = 132;
+    g.refreshRoster();
+    g.setMode('map');
+  } else if (name === 'garage') {
+    g.setMode('garage');
+    g.state.day = 2; g.state.tide.minutes = 21 * 60 + 12;
+    updateTide(g.state.tide, 0);
+    g.state.missions.cash = CASH.garage;
+    g.state.missions.rep = 970; g.state.missions.repLevel = 3;
+    // chapter 4 is DONE here — chapter 5 is the active next job
+    g.state.missions.current = 5;
+    g.state.missions.chapters.forEach(c => {
+      c.state = c.n < 5 ? 'DONE' : c.n === 5 ? 'ACTIVE' : 'LOCKED';
+    });
+    g.state.wanted = 0; g.state.player.heat = 5;
+    g.state.smgOwned = true;
+    g.state.dialogue = {
+      portrait: 'O', who: 'ODIE STRAND', role: 'MECHANIC · LAMPERS’ ROW',
+      line: '“She’ll do 200 now, Nadia. The Gullwing’s the fastest thing on the causeway — don’t scratch her.”',
+    };
+    g.state.banner = ['MISSION PASSED', '+$800 · +250 REP', 'MISSION 5 UNLOCKED · ODIE’S GARAGE UNLOCKED'];
+    g.state.popups = [];
+    g.state.prompt = null;
+    for (let s = 0; s < STEPS.garage; s++) g.stepSim(1 / 60, s);
+    g.state.district = "LAMPERS' ROW"; // the garage sits in Lampers' Row
+    g.state.speedKmh = 0;
   }
-  return best;
-}
-
-/**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
- */
-export function stageShot(name, world) {
-  world.reset();
-  if (name !== 'play' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
-    return { screen: SCREEN_TITLE, best: 0 };
-  }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
-  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
-  }
-  const over = world.state.lives === 0;
-  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
+  g.updateHudAll();
+  g.render();
+  g.render();
+  window.__shotReady = true;
+  document.title = 'SHOT_READY';
 }

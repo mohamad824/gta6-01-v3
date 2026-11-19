@@ -3,17 +3,299 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<title>BRINEHAVEN — A Tidal City Crime Story</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
-  #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
-  #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  :root{
+    --gold:#f5b942; --amber:#e77f25; --orange:#ff8d4c; --pink:#c8758a;
+    --mauve:#985fa2; --teal:#3fa7b0; --cash:#87e397; --panel:rgba(10,16,28,.82);
+    --panel2:rgba(10,16,28,.66); --line:#f5b942; --ink:#f2ead9; --dim:#b9a98c;
+    --red:#ff4d4d; --blue:#4da6ff;
+  }
+  html,body{margin:0;height:100%;overflow:hidden;background:#1a0f24;
+    font-family:"Trebuchet MS","Segoe UI",Verdana,sans-serif;color:var(--ink);}
+  #gl{position:fixed;inset:0;width:100%;height:100%;display:block;}
+  #hud{position:fixed;inset:0;pointer-events:none;user-select:none;}
+  .panel{background:var(--panel);border:1px solid rgba(245,185,66,.35);
+    border-radius:8px;box-shadow:0 4px 18px rgba(0,0,0,.45);}
+  .tag{color:var(--gold);font-weight:700;letter-spacing:.12em;font-size:12px;}
+  .big{font-weight:800;}
+  /* mission banner, top-left */
+  #mission{position:absolute;left:14px;top:12px;width:396px;padding:10px 14px 11px;
+    border-left:4px solid var(--gold);}
+  #mission .ch{font-size:12px;letter-spacing:.14em;color:var(--gold);font-weight:700;}
+  #mission h1{margin:2px 0 3px;font-size:27px;line-height:1.05;color:#fff;}
+  #mission .obj{font-size:13.5px;line-height:1.35;color:var(--ink);}
+  #mission .obj b{color:#fff;}
+  #mission .timer{margin-top:5px;font-size:13px;color:var(--cash);font-weight:700;}
+  #mission .pips{margin-top:6px;display:flex;gap:5px;}
+  #mission .pips i{width:26px;height:7px;border-radius:4px;background:#3a3345;display:block;}
+  #mission .pips i.on{background:var(--amber);}
+  #mission .next{margin-top:6px;font-size:12.5px;color:var(--dim);}
+  #mission .next b{color:var(--gold);}
+  /* wanted, centre-top */
+  #wanted{position:absolute;left:50%;top:8px;transform:translateX(-50%);text-align:center;}
+  #wanted .w{font-size:26px;font-weight:900;letter-spacing:.28em;color:#ffe9a8;
+    text-shadow:0 2px 10px rgba(0,0,0,.8),0 0 22px rgba(231,127,37,.55);}
+  #wanted .stars{font-size:26px;letter-spacing:4px;color:var(--gold);
+    text-shadow:0 2px 8px rgba(0,0,0,.85);}
+  #wanted .stars .off{color:#4a3f55;}
+  /* cash + weapons, top-right */
+  #cashbox{position:absolute;right:14px;top:12px;text-align:right;}
+  #cashbox .clock{font-size:13px;color:#f2ead9;font-weight:700;letter-spacing:.08em;text-shadow:0 1px 4px rgba(0,0,0,.8);}
+  #cash{font-size:44px;font-weight:900;color:var(--cash);line-height:1;
+    text-shadow:0 2px 0 #12351a,0 3px 12px rgba(0,0,0,.7);}
+  #cashbox .stars2{font-size:20px;color:var(--gold);letter-spacing:3px;margin-top:2px;
+    text-shadow:0 2px 6px rgba(0,0,0,.8);}
+  #cashbox .stars2 .off{color:#4a3f55;}
+  #slots{display:flex;gap:6px;justify-content:flex-end;margin-top:7px;}
+  .slot{width:74px;padding:5px 4px 4px;text-align:center;background:var(--panel);
+    border:1px solid rgba(245,185,66,.35);border-radius:6px;}
+  .slot .n{font-size:10px;color:var(--dim);font-weight:700;}
+  .slot .w{font-size:12.5px;font-weight:800;color:#fff;}
+  .slot .a{font-size:11px;color:var(--cash);font-weight:700;}
+  .slot.locked{opacity:.55;} .slot.locked .w{color:#8a7f95;}
+  .slot.active{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 0 14px rgba(245,185,66,.35);}
+  #alertchip{margin-top:7px;display:inline-block;padding:3px 10px;border-radius:4px;
+    background:#c81e2b;color:#fff;font-size:12px;font-weight:800;letter-spacing:.08em;}
+  /* tide panel, right under cash */
+  #tide{position:absolute;right:14px;top:212px;width:300px;padding:8px 12px;text-align:right;}
+  #tide .tt{font-size:13px;font-weight:800;color:#9fd8e8;letter-spacing:.1em;}
+  #tide .ts{font-size:12.5px;color:var(--ink);margin-top:2px;}
+  #tide .bar{height:6px;border-radius:3px;background:#22303c;margin-top:6px;overflow:hidden;}
+  #tide .bar i{display:block;height:100%;width:64%;background:linear-gradient(90deg,#2a7f8a,#9fd8e8);}
+  /* police roster, mid-left */
+  #roster{position:absolute;left:14px;top:252px;width:322px;padding:9px 12px 10px;}
+  #roster h2{margin:0 0 6px;font-size:12.5px;letter-spacing:.12em;color:#ffd27a;}
+  #roster h2 .cnt{float:right;color:var(--dim);}
+  .unit{display:flex;align-items:center;gap:8px;font-size:13.5px;padding:3px 0;
+    border-bottom:1px solid rgba(255,255,255,.06);}
+  .unit:last-child{border-bottom:0;}
+  .unit .dot{width:9px;height:9px;border-radius:50%;background:var(--red);flex:none;}
+  .unit .dot.b{background:var(--blue);} .unit .dot.a{background:var(--gold);}
+  .unit .nm{font-weight:800;color:#fff;flex:1;white-space:nowrap;}
+  .unit .ty{color:var(--dim);font-size:11.5px;}
+  .unit .ds{color:#fff;font-weight:700;}
+  .pill{font-size:11px;font-weight:900;letter-spacing:.05em;padding:2px 7px;border-radius:3px;color:#fff;}
+  .pill.ram{background:#c81e2b;} .pill.pur{background:#e77f25;} .pill.rb{background:#7a5fd0;}
+  .pill.sp{background:#2a7f8a;} .pill.dk{background:#55606e;} .pill.gr{background:#5a6b52;}
+  #roster .more{margin-top:6px;font-size:12px;color:var(--dim);}
+  /* minimap + bars, bottom-left */
+  #miniwrap{position:absolute;left:14px;bottom:44px;width:318px;}
+  #minimap{width:158px;height:158px;border-radius:50%;border:3px solid var(--gold);
+    box-shadow:0 0 0 3px rgba(0,0,0,.55),0 4px 18px rgba(0,0,0,.6);display:block;
+    background:#12202c;}
+  #district{margin-top:6px;font-size:14px;font-weight:800;color:#ffd27a;
+    text-shadow:0 1px 4px rgba(0,0,0,.9);}
+  #district span{color:var(--dim);font-weight:600;font-size:12px;}
+  .vbar{margin-top:4px;display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:800;}
+  .vbar label{width:58px;color:var(--dim);letter-spacing:.06em;}
+  .vbar .tr{flex:1;height:9px;border-radius:5px;background:#2a2436;overflow:hidden;}
+  .vbar .tr i{display:block;height:100%;}
+  .vbar .vl{width:30px;text-align:right;color:#fff;}
+  /* dialogue, bottom-centre */
+  #dialogue{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);
+    width:560px;padding:10px 14px 10px 12px;display:flex;gap:12px;align-items:center;}
+  #portrait{width:62px;height:62px;flex:none;border-radius:50%;border:3px solid var(--gold);
+    display:flex;align-items:center;justify-content:center;font-size:30px;font-weight:900;
+    color:#fff;background:linear-gradient(160deg,#c8758a,#985fa2);text-shadow:0 2px 4px rgba(0,0,0,.6);}
+  #dialogue .who{font-size:13px;font-weight:900;color:var(--gold);letter-spacing:.08em;}
+  #dialogue .who span{color:var(--dim);font-weight:700;}
+  #dialogue .line{font-size:15.5px;line-height:1.35;color:#fff;margin-top:2px;font-style:italic;}
+  /* radio + vehicle card, bottom-right */
+  #radio{position:absolute;right:14px;bottom:196px;width:300px;padding:7px 12px;text-align:right;}
+  #radio .st{font-size:14px;font-weight:900;color:#ff9ecf;}
+  #radio .tr{font-size:12px;color:var(--dim);}
+  #vehicle{position:absolute;right:14px;bottom:44px;width:300px;padding:9px 13px 10px;text-align:right;}
+  #vehicle .vn{font-size:17px;font-weight:900;color:var(--gold);letter-spacing:.04em;}
+  #vehicle .cond{margin-top:5px;font-size:11.5px;color:var(--dim);font-weight:800;letter-spacing:.08em;}
+  #vehicle .cond .tr{height:8px;border-radius:4px;background:#2a2436;margin-top:3px;overflow:hidden;}
+  #vehicle .cond .tr i{display:block;height:100%;background:linear-gradient(90deg,#3fae5a,#87e397);}
+  #vehicle .spd{font-size:64px;font-weight:900;color:#fff;line-height:.95;
+    text-shadow:0 3px 0 rgba(0,0,0,.45),0 4px 16px rgba(0,0,0,.6);}
+  #vehicle .spd small{font-size:18px;color:var(--dim);}
+  #vehicle .gear{display:inline-block;background:var(--gold);color:#241505;font-weight:900;
+    font-size:15px;padding:2px 10px;border-radius:4px;margin-left:8px;vertical-align:14px;}
+  /* score popups */
+  #popups{position:absolute;left:50%;top:38%;transform:translateX(-50%);text-align:center;}
+  .pop{font-size:24px;font-weight:900;color:#ffe9a8;text-shadow:0 2px 0 #7a4a00,0 3px 12px rgba(0,0,0,.8);
+    margin:3px 0;letter-spacing:.03em;}
+  .pop .amt{color:var(--cash);}
+  /* centre prompt + banner */
+  #prompt{position:absolute;left:50%;top:56%;transform:translateX(-50%);
+    font-size:20px;font-weight:900;color:#fff;background:rgba(10,16,28,.85);
+    border:2px solid var(--gold);border-radius:6px;padding:8px 18px;letter-spacing:.04em;}
+  #prompt b{color:var(--gold);}
+  #banner{position:absolute;left:50%;top:30%;transform:translateX(-50%);text-align:center;display:none;
+    background:rgba(10,16,28,.88);border:1px solid rgba(255,210,122,.55);border-radius:12px;
+    padding:14px 34px 12px;white-space:nowrap;}
+  #banner .b1{font-size:46px;font-weight:900;color:#ffe9a8;letter-spacing:.06em;
+    text-shadow:0 3px 0 #7a4a00,0 6px 24px rgba(0,0,0,.8);}
+  #banner .b2{font-size:20px;font-weight:800;color:var(--cash);margin-top:4px;
+    text-shadow:0 2px 8px rgba(0,0,0,.8);}
+  #banner .b3{font-size:15px;color:#fff;margin-top:2px;text-shadow:0 2px 6px rgba(0,0,0,.8);}
+  /* controls strip */
+  #controls{position:absolute;left:0;right:0;bottom:0;height:30px;display:flex;
+    align-items:center;justify-content:center;font-size:13px;color:var(--dim);
+    background:linear-gradient(180deg,rgba(10,16,28,0),rgba(10,16,28,.85));}
+  #controls b{color:var(--gold);margin:0 2px;}
+  /* title screen */
+  #title{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;text-align:center;
+    background:linear-gradient(180deg,rgba(26,10,40,.18) 0%,rgba(26,10,40,.62) 78%);}
+  #title .kicker{font-size:15px;letter-spacing:.42em;color:var(--gold);font-weight:800;}
+  #title h1{margin:6px 0 0;font-size:92px;line-height:.95;font-weight:900;color:#fff;
+    letter-spacing:.06em;text-shadow:0 4px 0 #7a2e12,0 10px 34px rgba(0,0,0,.75);}
+  #title h1 em{font-style:normal;color:var(--orange);}
+  #title .tag{margin-top:10px;font-size:19px;color:#ffe9a8;font-style:italic;
+    text-shadow:0 2px 8px rgba(0,0,0,.8);}
+  #title .story{margin-top:14px;max-width:640px;font-size:15.5px;line-height:1.5;color:#f2ead9;
+    text-shadow:0 2px 6px rgba(0,0,0,.9);}
+  #title .menu{margin-top:22px;display:flex;gap:12px;}
+  #title .menu div{pointer-events:auto;cursor:pointer;background:var(--panel);border:1px solid var(--gold);
+    border-radius:6px;padding:10px 22px;font-weight:800;font-size:15px;color:#fff;}
+  #title .menu div.sel{background:var(--gold);color:#241505;}
+  #title .foot{margin-top:18px;font-size:12.5px;color:var(--dim);}
+  /* map overlay */
+  #mapov{position:absolute;inset:0;display:none;background:rgba(8,12,22,.72);}
+  #mapcard{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:1120px;max-width:94vw;box-sizing:border-box;background:rgba(10,16,28,.94);border:1px solid rgba(245,185,66,.5);
+    border-radius:12px;padding:14px 20px 12px;}
+  #mapcard h1{margin:0;font-size:40px;letter-spacing:.18em;color:#fff;}
+  #mapcard h1 em{font-style:normal;color:var(--gold);}
+  #mapcard .sub{font-size:12px;letter-spacing:.2em;color:var(--dim);margin-top:2px;}
+  #mapgrid{display:flex;gap:18px;margin-top:10px;align-items:flex-start;}
+  #mapleft{width:660px;flex:none;}
+  #mapcanvas{width:640px;height:280px;border:1px solid rgba(245,185,66,.4);border-radius:8px;
+    background:#12202c;flex:none;}
+  #tidechart{width:640px;height:76px;margin-top:8px;border:1px solid rgba(63,167,176,.5);
+    border-radius:8px;background:#0d1a24;flex:none;}
+  #mapside{flex:1;min-width:0;font-size:12.5px;}
+  #mapside h3{margin:2px 0 5px;font-size:12.5px;letter-spacing:.14em;color:var(--gold);}
+  .mrow{display:flex;justify-content:space-between;gap:8px;padding:2.5px 0;border-bottom:1px solid rgba(255,255,255,.07);}
+  .mrow .st-done{color:var(--cash);font-weight:800;} .mrow .st-act{color:var(--gold);font-weight:800;}
+  .mrow .st-lock{color:#6d6478;font-weight:800;}
+  .crow{display:flex;justify-content:space-between;gap:8px;padding:2px 0;}
+  .crow span:last-child{color:#b9a98c;text-align:right;}
+  #mapcard .legend{margin-top:8px;font-size:12px;color:var(--dim);}
+  #mapcard .close{margin-top:8px;display:inline-block;background:var(--gold);color:#241505;
+    font-weight:900;padding:7px 18px;border-radius:6px;font-size:14px;}
+  /* garage overlay */
+  #garageov{position:absolute;inset:0;display:none;}
+  #shop{position:absolute;right:14px;top:120px;width:430px;padding:14px 18px 14px;}
+  #shop h2{margin:0;font-size:30px;color:var(--cash);letter-spacing:.02em;}
+  #shop .car{font-size:16px;color:var(--gold);font-weight:800;margin-top:2px;}
+  #shop .bars{margin:10px 0 4px;}
+  #shop .bars .vbar label{width:104px;}
+  .item{display:flex;align-items:center;gap:10px;padding:8px 2px;border-bottom:1px solid rgba(255,255,255,.08);font-size:15px;}
+  .item .no{color:var(--gold);font-weight:900;width:16px;}
+  .item .nm{flex:1;font-weight:800;color:#fff;}
+  .item .nm small{display:block;color:var(--dim);font-weight:600;font-size:12px;}
+  .item .pr{color:var(--cash);font-weight:900;font-size:16px;}
+  .item .dots i{display:inline-block;width:9px;height:9px;border-radius:50%;background:#3a3345;margin-left:3px;}
+  .item .dots i.on{background:var(--cash);}
+  #shop .hint{margin-top:10px;font-size:12.5px;color:var(--dim);}
+  .hidden{display:none !important;}
+  #status{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;}
 </style>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<canvas id="gl" aria-label="BRINEHAVEN: drive, steal cars, lose the Harbour Wardens, clear seven tide jobs"></canvas>
+<div id="hud">
+  <div id="mission" class="panel">
+    <div class="ch" id="m-ch">CH. 4 / 7 &mdash; HIGH WATER</div>
+    <h1 id="m-title">High Water</h1>
+    <div class="obj" id="m-obj">Cross the flooded causeway before the tide turns &middot; stage <b>2 of 2</b></div>
+    <div class="timer" id="m-timer">TARGET 30m &middot; TIDE TURNS IN 180 MIN</div>
+    <div class="pips" id="m-pips"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+    <div class="next" id="m-next">NEXT: Reach the Gullgate safehouse</div>
+  </div>
+  <div id="wanted"><div class="w">WANTED</div><div class="stars" id="w-stars">&#9733;&#9733;&#9733;&#9733;<span class="off">&#9733;</span></div></div>
+  <div id="cashbox">
+    <div class="clock" id="clock">DAY 2 &middot; 18:42 &middot; BRINEHAVEN</div>
+    <div id="cash">$5,940</div>
+    <div class="stars2" id="cash-stars">&#9733;&#9733;&#9733;&#9733;<span class="off">&#9733;</span></div>
+    <div id="slots"></div>
+    <div id="alertchip">IN SIGHT &middot; search zone follows you</div>
+  </div>
+  <div id="tide" class="panel">
+    <div class="tt" id="tide-title">HIGH TIDE 18:42</div>
+    <div class="ts" id="tide-sub">CAUSEWAY FLOODED &mdash; boats out, cruisers grounded</div>
+    <div class="bar"><i id="tide-bar"></i></div>
+  </div>
+  <div id="roster" class="panel">
+    <h2>&#9650; HARBOUR WARDENS &mdash; RESPONSE <span class="cnt" id="roster-cnt">5 UNITS</span></h2>
+    <div id="roster-rows"></div>
+    <div class="more" id="roster-more">+2 more units converging &middot; heat rising with every alarm</div>
+  </div>
+  <div id="miniwrap">
+    <canvas id="minimap" width="316" height="316"></canvas>
+    <div id="district">THE CAUSEWAY &middot; <span>BRINEHAVEN &middot; 18:42</span></div>
+    <div class="vbar"><label>HEALTH</label><div class="tr"><i id="bar-hp" style="width:82%;background:#3fae5a"></i></div><div class="vl" id="val-hp">82</div></div>
+    <div class="vbar"><label>ARMOUR</label><div class="tr"><i id="bar-ar" style="width:64%;background:#9fb6c9"></i></div><div class="vl" id="val-ar">64</div></div>
+    <div class="vbar"><label>REP</label><div class="tr"><i id="bar-rep" style="width:72%;background:#e77f25"></i></div><div class="vl" id="val-rep">720</div></div>
+    <div class="vbar"><label>DRIFT GLASS</label><div class="tr"><i id="bar-dg" style="width:17%;background:#3fa7b0"></i></div><div class="vl" id="val-dg">4/24</div></div>
+  </div>
+  <div id="dialogue" class="panel">
+    <div id="portrait">T</div>
+    <div><div class="who" id="dlg-who">TESS LUMEN <span>&mdash; GETAWAY DRIVER</span></div>
+    <div class="line" id="dlg-line">&ldquo;Hold her steady, Nadia &mdash; the water&rsquo;s up to the lamps and Greer&rsquo;s boats are faster than they look.&rdquo;</div></div>
+  </div>
+  <div id="radio" class="panel"><div class="st" id="radio-st">&#9834; BRINE FM 91.4</div><div class="tr" id="radio-tr">&ldquo;Low Tide&rdquo; &middot; The Salt Choir</div></div>
+  <div id="vehicle" class="panel">
+    <div class="vn" id="veh-name">FERRYMAN GT &ldquo;GULLWING&rdquo;</div>
+    <div class="cond">CONDITION <span id="veh-cond-n">87%</span> &middot; FUEL <span id="veh-fuel">71%</span>
+      <div class="tr"><i id="veh-cond" style="width:87%"></i></div></div>
+    <div><span class="spd" id="speed">132</span><small> km/h</small><span class="gear" id="gear">G3</span></div>
+  </div>
+  <div id="popups"></div>
+  <div id="prompt" class="hidden"><b>E</b> &mdash; STEAL CAR</div>
+  <div id="banner"><div class="b1" id="banner-1"></div><div class="b2" id="banner-2"></div><div class="b3" id="banner-3"></div></div>
+  <div id="controls"><b>WASD</b> drive / walk &nbsp;&middot;&nbsp; <b>E</b> enter &middot; steal car &nbsp;&middot;&nbsp; <b>SPACE</b> brake &nbsp;&middot;&nbsp; <b>F</b> shoot &nbsp;&middot;&nbsp; <b>SHIFT</b> nitro &nbsp;&middot;&nbsp; <b>M</b> map &nbsp;&middot;&nbsp; <b>G</b> garage &nbsp;&middot;&nbsp; <b>P</b> pause &nbsp;&middot;&nbsp; mouse: look</div>
+
+  <div id="title">
+    <div class="kicker">A TIDAL CITY CRIME STORY</div>
+    <h1>BRINE<em>HAVEN</em></h1>
+    <div class="tag">Seven tides. One debt. A whole city to lose the cops in.</div>
+    <div class="story">Nadia Ferro, ex-ferry pilot, owes <b>$12,400</b> to the harbour company.
+      Fixer Bram Okafor offers her seven jobs &mdash; one per tide &mdash; to clear it.
+      Detective Anselm Greer is hunting her, and the causeway floods twice a day.</div>
+    <div class="menu"><div class="sel" id="menu-new">NEW GAME</div><div id="menu-continue">CONTINUE &mdash; CH. 4 &middot; $5,940 &middot; REP 3</div><div id="menu-how">HOW TO PLAY</div></div>
+    <div class="foot">WASD drive / walk &middot; E enter or steal a car &middot; F shoot &middot; SPACE brake &middot; SHIFT nitro &middot; M map &middot; G garage &middot; P pause &middot; N radio &middot; sound on for BRINE FM 91.4</div>
+  </div>
+
+  <div id="mapov"><div id="mapcard">
+    <h1>BRINE<em>HAVEN</em></h1>
+    <div class="sub">ISLAND MAP &middot; TIDE CHART &middot; SEVEN JOBS &middot; CREW &middot; SAVE SLOT 1 &middot; DAY 2 &middot; 18:42 &middot; $5,940</div>
+    <div id="mapgrid">
+      <div id="mapleft"><canvas id="mapcanvas" width="1280" height="600"></canvas>
+      <canvas id="tidechart" width="1280" height="172"></canvas></div>
+      <div id="mapside">
+        <h3>CHAPTERS &mdash; 7 TIDES</h3><div id="chapters"></div>
+        <h3 style="margin-top:12px">CREW</h3><div id="crew"></div>
+        <h3 style="margin-top:12px">STATS</h3><div id="stats"></div>
+      </div>
+    </div>
+    <div class="legend">LEGEND &mdash; &#9679; You &nbsp;&middot;&nbsp; &#9650; Wardens &nbsp;&middot;&nbsp; &#9670; Drift Glass &nbsp;&middot;&nbsp; &#9733; Mission &nbsp;&middot;&nbsp; &#9783; Garage &nbsp;&middot;&nbsp; blue water = flooded causeway &nbsp;&middot;&nbsp; amber = mudflat shortcut, open at low tide</div>
+    <div class="close">CLOSE MAP (M)</div>
+  </div></div>
+
+  <div id="garageov">
+    <div id="shop" class="panel">
+      <h2>Odie&rsquo;s Spray &amp; Tune</h2>
+      <div class="car">FERRYMAN GT &ldquo;GULLWING&rdquo; &middot; LAMPERS&rsquo; ROW</div>
+      <div class="bars">
+        <div class="vbar"><label>TOP SPEED</label><div class="tr"><i style="width:72%;background:#f5b942"></i></div></div>
+        <div class="vbar"><label>ACCELERATION</label><div class="tr"><i style="width:66%;background:#f5b942"></i></div></div>
+        <div class="vbar"><label>ARMOUR</label><div class="tr"><i style="width:48%;background:#87e397"></i></div></div>
+        <div class="vbar"><label>HANDLING</label><div class="tr"><i style="width:78%;background:#f5b942"></i></div></div>
+      </div>
+      <div id="shop-items"></div>
+      <div class="hint">Number keys or click to buy &middot; Esc to leave &middot; Cash $9,180</div>
+    </div>
+  </div>
+</div>
 <p id="status" role="status" aria-live="polite"></p>
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>
